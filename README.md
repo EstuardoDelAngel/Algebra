@@ -6,9 +6,10 @@ A basic computer algebra system written in Haskell.
  - Parsing / printing expressions
  - Simplifying expressions (done automatically when applying operators to expressions)
  - Differentiation
+ - Expanding brackets
 
 ## To Do:
- - Transformations (factoring, expanding, identities)
+ - Transformations (factoring, identities)
  - Equality checking 
  - Integration
  - Substituting variables
