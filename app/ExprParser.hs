@@ -2,7 +2,7 @@
 {-# HLINT ignore "Use lambda-case" #-}
 module ExprParser ( parseCmd ) where
 
-import Expr ( d, dn, funcs, pow, Expr(Func, Var), Transformation )
+import Expr ( d, dn, expand, funcs, pow, Expr(Func, Var), Transformation )
 
 import Control.Applicative ( Alternative(..) )
 import Data.Char ( isDigit, isSpace, isAlpha )
@@ -147,24 +147,29 @@ addRec subExpr e = do
 add :: Parser Expr
 add = leftAssoc addRec mul
 
-cmd :: Parser Transformation
+cmd :: Parser Expr
 cmd = do
-        string "dy/dx"
-        return (d "x")
+        space
+        string "dy/d"
+        var <- ident
+        d var <$> cmd
     <|> do
+        space
         char 'd'
         n <- some digit
-        string "y/dx"
+        string "y/d"
+        var <- ident
         string n
-        return (dn "x" (read n))
+        dn var (read n) <$> cmd
     <|> do
-        string "echo"
-        return id
+        space
+        string "expand"
+        expand <$> cmd
+    <|> do
+        space
+        add
 
 parseCmd :: String -> Maybe Expr
-parseCmd x = case parse (do
-    f <- cmd
-    space
-    f <$> add) x of
-        Just (out, "") -> Just out
-        _ -> Nothing
+parseCmd x = case parse cmd x of
+    Just (out, "") -> Just out
+    _ -> Nothing

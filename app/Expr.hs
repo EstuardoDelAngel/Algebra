@@ -1,11 +1,11 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use lambda-case" #-}
-module Expr ( Expr(..), Transformation, pow, funcs, d, dn ) where
+module Expr ( Expr(..), Transformation, pow, funcs, d, dn, expand ) where
 
 import Data.Ratio ( (%), numerator, denominator )
 import Data.List ( intercalate )
 
-data Expr = Add [Expr] | Mul Rational [Expr] | Exp Expr Expr | Constant Rational | Var String | Func String Expr -- add logs
+data Expr = Add [Expr] | Mul Rational [Expr] | Exp Expr Expr | Constant Rational | Var String | Func String Expr-- add logs
 type Transformation = Expr -> Expr
 
 expBrackets :: Expr -> String
@@ -19,9 +19,11 @@ instance Show Expr where
         ('-':x) -> " - " ++ x
         x -> " + " ++ x) . show) terms
     show (Mul coeff []) = show (Constant coeff)
-    show (Mul coeff factors) = intercalate " * " (map (\x -> case x of
+    show (Mul 1 factors) = intercalate "*" (map (\x -> case x of
         Add _ -> "(" ++ show x ++ ")"
         _ -> show x) factors)
+    show (Mul (-1) factors) = "-" ++ show (Mul 1 factors)
+    show (Mul coeff factors) = show (Constant coeff) ++ "*" ++ show (Mul 1 factors)
     show (Exp base (Constant expo))
         | expo == -1 = "1/" ++ show base
         | expo < 0 = "1/" ++ show (Exp base (Constant (-expo)))
@@ -68,19 +70,19 @@ addTerm res (term:rem) x = case term + x of
 instance Num Expr where
     Constant 0 + x = x
     x + Constant 0 = x
-    
+
     Constant c + Constant c' = Constant (c + c')
 
-    Add terms + Add terms' = foldr (*) (Add terms) terms'
+    Add terms + Add terms' = foldr (+) (Add terms) terms'
 
     Add terms + x = Add (addTerm [] terms x)
     x + Add terms = Add terms + x
 
     Mul coeff factors + Mul coeff' factors' | containSame factors factors' = Mul (coeff + coeff') factors
-    
+
     Mul coeff [factor] + x | factor == x = Mul (coeff + 1) [factor]
     x + Mul coeff [factor] = Mul coeff [factor] + x
-    
+
     x + x' | x == x' = Constant 2 * x
     x + x' = Add [x, x']
 
@@ -156,7 +158,6 @@ funcs = ["sin", "cos", "tan",
     "sinh", "cosh", "tanh",
     "ln"]
 
-
 -- differentiation
 d :: String -> Transformation
 
@@ -189,5 +190,29 @@ d x (Func f u) = (case f of
 applyN :: (a -> a) -> Int -> a -> a
 applyN f n x = iterate f x !! n
 
-dn :: String -> Int -> Expr -> Expr
-dn x = applyN (d x)
+dn :: String -> Int -> Transformation
+dn ex = applyN (d ex)
+
+
+expandMul :: Expr -> Expr -> Expr
+-- expandMul (Add terms) (Add terms') = foldr ((+) . expandMul (Add terms)) (Constant 0) terms'
+expandMul (Add terms) (Add terms') = foldr ((+) . expandMul (Add terms)) (Constant 0) terms' -- Add (map (expandMul (Add terms)) terms')
+expandMul (Add terms) x = foldr ((+) . (* x)) (Constant 0) terms
+expandMul x (Add terms) = expandMul (Add terms) x
+expandMul x x' = x * x'
+
+expand :: Transformation
+-- maybe put this stuff somewhere else, or don't allow empty lists at all
+expand (Add []) = Constant 0
+expand (Add [term]) = term
+expand (Add terms) = Add (map expand terms)
+expand (Mul coeff []) = Constant 0
+expand (Mul coeff factors) = foldr expandMul (Constant coeff) factors -- do stuff
+expand (Exp base (Constant i))
+    | i < 0 = pow (expand (Exp base (Constant (-i)))) (Constant (-1))
+    | otherwise = case (numerator i, denominator i) of
+        (n, 1) -> foldr expandMul (Constant 1) (replicate (fromIntegral n) (expand base))
+        (n, d) -> pow (expand (Exp base (Constant (fromIntegral n)))) (Constant (1 % d))
+expand (Exp base expo) = pow (expand base) (expand expo)
+expand (Func f x) = Func f (expand x)
+expand x = x
